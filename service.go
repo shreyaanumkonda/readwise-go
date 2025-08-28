@@ -18,16 +18,14 @@ func NewService(database Storage) *Service {
 }
 
 func (s *Service) RegisterRoutes(r *mux.Router) {
-	r.HandleFunc("/users/{user-ID}/Parse-Kindle-File", s.handleParseKindleFile).Methods("POST")
-	r.HandleFunc("/cloud/Send-Daily-Insights", s.handleSendDailyInsights).Methods("GET")
+	r.HandleFunc("/users/{user_id}/parse-kindle-file", s.handleParseKindleFile).Methods("POST")
+	r.HandleFunc("/cloud/send-daily-insights", s.handleSendDailyInsights).Methods("GET")
 }
 
 func (s *Service) handleParseKindleFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)                //this is a map of the variables in the request(extracted using gorilla mux)
-	userID := vars["user-ID"]          //this is the userID from the request
+	userID := vars["user_id"]          //this is the userID from the request
 	file, _, err := r.FormFile("file") //this is the file from the request(extracted using gorilla mux)
-	println(userID)                    //remove this at the end
-	println(file)
 
 	if err != nil {
 		WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Error parsing file: %v", err))
@@ -40,15 +38,22 @@ func (s *Service) handleParseKindleFile(w http.ResponseWriter, r *http.Request) 
 		WriteJSON(w, http.StatusBadRequest, fmt.Sprintf("Error parsing file: %v", err))
 		return
 	}
-	println(rawExtractBook.Title)      //remove this at the end
-	println(rawExtractBook.Authors)    //remove this at the end
-	println(rawExtractBook.Highlights) //remove this at the end
-	//save the highlights to the database
 
+	//save the highlights to the database
+	if err := s.saveHighlightsToDatabase(rawExtractBook, userID); err != nil {
+		WriteJSON(w, http.StatusInternalServerError, fmt.Sprintf("Error saving highlights: %v", err))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, "Highlights saved successfully")
 }
 
 func (s *Service) handleSendDailyInsights(w http.ResponseWriter, r *http.Request) {
-
+	// TODO: Implement daily insights logic
+	WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Daily insights feature coming soon",
+		"status":  "not implemented yet",
+	})
 }
 
 func ParseKindleExtractFile(file multipart.File) (*RawExtractBook, error) {
@@ -62,5 +67,25 @@ func ParseKindleExtractFile(file multipart.File) (*RawExtractBook, error) {
 }
 
 func (s *Service) saveHighlightsToDatabase(rawExtractBook *RawExtractBook, userID string) error {
+	// First save the book
+	book := &Book{
+		ID:        rawExtractBook.ASIN, // Use ASIN as ID since it's unique
+		ASIN:      rawExtractBook.ASIN,
+		Title:     rawExtractBook.Title,
+		Authors:   rawExtractBook.Authors,
+		UserID:    userID,
+		CreatedAt: "", // Will use database default
+		UpdatedAt: "", // Will use database default
+	}
+
+	if err := s.database.CreateBook(book); err != nil {
+		return fmt.Errorf("failed to create book: %w", err)
+	}
+
+	// Then save the highlights
+	if err := s.database.SaveHighlights(rawExtractBook, userID); err != nil {
+		return fmt.Errorf("failed to save highlights: %w", err)
+	}
+
 	return nil
 }
